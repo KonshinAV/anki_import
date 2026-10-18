@@ -4,8 +4,8 @@
 
 anki:
   url: "http://localhost:8765"          # адрес AnkiConnect
-  deck: "Deutsche Lernen::Dev_deck"     # колода
-  model: "Basic (and reversed card)_main"   # тип заметки
+  deck: "Deutsche Lernen::IMPORT"     # колода (создаётся автоматически, если её нет; "::" = вложенность)
+  model: "Basic (and reversed card)_main"   # тип заметки (создаётся автоматически, если его нет)
   timeout: 60                           # таймаут запросов к AnkiConnect, сек
 
 excel:
@@ -20,12 +20,91 @@ fields:
     - base_de
     - full_de
     - audio_text_de
-    - base_ru
+    - base_tr
   # Поля предложений: шаблоны, {n} подставляется от 1 до sentences_count
   sentences_count: 9
   sentence_fields:
     - "s{n}_de"
-    - "s{n}_ru"
+    - "s{n}_tr"
+
+# Содержимое типа заметки. Используется ТОЛЬКО при создании типа (если его ещё нет в Anki).
+# Поля типа строятся автоматически: fields.base + audio.main_dest + для каждого n:
+#   sentence_fields + audio.sentence_dest.
+# Все {{поля}} из шаблонов должны быть среди этих полей, иначе скрипт остановится до создания типа.
+note_type:
+  css: |
+    .card {
+      font-family: arial;
+      font-size: 20px;
+      text-align: center;
+    }
+  cards:
+    # Карточка 1: немецкий -> русский
+    - name: "Card 1"
+      front: |
+        <i style="color:yellow;">{{base_de}}{{base_audio}}</i>
+
+        <br><hr>
+
+        <div style='font-family: Arial; font-size: 16px; color: SkyBlue;'>{{s1_de}}{{s1_audio}}</div>
+        <div style='font-family: Arial; font-size: 16px; color: white;'>{{s2_de}}{{s2_audio}}</div>
+        <div style='font-family: Arial; font-size: 16px; color: SkyBlue;'>{{s3_de}}{{s3_audio}}</div>
+        <div style='font-family: Arial; font-size: 16px; color: white;'>{{s4_de}}{{s4_audio}}</div>
+        <div style='font-family: Arial; font-size: 16px; color: SkyBlue;'>{{s5_de}}{{s5_audio}}</div>
+        <div style='font-family: Arial; font-size: 16px; color: white;'>{{s6_de}}{{s6_audio}}</div>
+        <div style='font-family: Arial; font-size: 16px; color: SkyBlue;'>{{s7_de}}{{s7_audio}}</div>
+        <div style='font-family: Arial; font-size: 16px; color: white;'>{{s8_de}}{{s8_audio}}</div>
+        <div style='font-family: Arial; font-size: 16px; color: SkyBlue;'>{{s9_de}}{{s9_audio}}</div>
+      back: |
+        <i style="color:yellow;">{{base_tr}}</i>
+        <br><i style=color:lime;">{{full_de}}{{base_audio}}</i>
+
+        <hr>
+
+        <div style='font-family: Arial; font-size: 16px;'></div><br>
+
+        <div style='font-family: Arial; font-size: 16px; color: SkyBlue;'>{{s1_de}}{{s1_audio}}{{hint:s1_tr}}</div>
+        <div style='font-family: Arial; font-size: 16px; color: white;'>{{s2_de}}{{s2_audio}}{{hint:s2_tr}}</div>
+        <div style='font-family: Arial; font-size: 16px; color: SkyBlue;'>{{s3_de}}{{s3_audio}}{{hint:s3_tr}}</div>
+        <div style='font-family: Arial; font-size: 16px; color: white;'>{{s4_de}}{{s4_audio}}{{hint:s4_tr}}</div>
+        <div style='font-family: Arial; font-size: 16px; color: SkyBlue;'>{{s5_de}}{{s5_audio}}{{hint:s5_tr}}</div>
+        <div style='font-family: Arial; font-size: 16px; color: white;'>{{s6_de}}{{s6_audio}}{{hint:s6_tr}}</div>
+        <div style='font-family: Arial; font-size: 16px; color: SkyBlue;'>{{s7_de}}{{s7_audio}}{{hint:s7_tr}}</div>
+        <div style='font-family: Arial; font-size: 16px; color: white;'>{{s8_de}}{{s8_audio}}{{hint:s8_tr}}</div>
+        <div style='font-family: Arial; font-size: 16px; color: SkyBlue;'>{{s9_de}}{{s9_audio}}{{hint:s9_tr}}</div>
+
+    # Карточка 2: русский -> немецкий (с вводом {{type:full_de}})
+    - name: "Card 2"
+      front: |
+        <i style=color:yellow;">{{base_tr}}{{base_audio}}</i><br>
+        {{type:full_de}}
+        <hr>
+
+        <div style='font-family: Arial; font-size: 16px; color: SkyBlue;'>{{s1_tr}}{{s1_audio}}</div>
+        <div style='font-family: Arial; font-size: 16px; color: white;'>{{s2_tr}}{{s2_audio}}</div>
+        <div style='font-family: Arial; font-size: 16px; color: SkyBlue;'>{{s3_tr}}{{s3_audio}}</div>
+        <div style='font-family: Arial; font-size: 16px; color: white;'>{{s4_tr}}{{s4_audio}}</div>
+        <div style='font-family: Arial; font-size: 16px; color: SkyBlue;'>{{s5_tr}}{{s5_audio}}</div>
+        <div style='font-family: Arial; font-size: 16px; color: white;'>{{s6_tr}}{{s6_audio}}</div>
+        <div style='font-family: Arial; font-size: 16px; color: SkyBlue;'>{{s7_tr}}{{s7_audio}}</div>
+        <div style='font-family: Arial; font-size: 16px; color: white;'>{{s8_tr}}{{s8_audio}}</div>
+        <div style='font-family: Arial; font-size: 16px; color: SkyBlue;'>{{s9_tr}}{{s9_audio}}</div>
+      back: |
+        <i style=color:lime;">{{type:full_de}}</i>
+        <br><i style=color:yellow;">{{base_tr}}{{base_audio}}</i>
+        <br><hr>
+        <div style="display:none">[sound:_1-minute-of-silence.mp3]</div>
+
+        <div style='font-family: Arial; font-size: 16px;'></div><br>
+        <div style='font-family: Arial; font-size: 16px; color: SkyBlue;'>{{s1_tr}}{{s1_audio}}{{hint:s1_de}}</div>
+        <div style='font-family: Arial; font-size: 16px; color: white;'>{{s2_tr}}{{s2_audio}}{{hint:s2_de}}</div>
+        <div style='font-family: Arial; font-size: 16px; color: SkyBlue;'>{{s3_tr}}{{s3_audio}}{{hint:s3_de}}</div>
+        <div style='font-family: Arial; font-size: 16px; color: white;'>{{s4_tr}}{{s4_audio}}{{hint:s4_de}}</div>
+        <div style='font-family: Arial; font-size: 16px; color: SkyBlue;'>{{s5_tr}}{{s5_audio}}{{hint:s5_de}}</div>
+        <div style='font-family: Arial; font-size: 16px; color: white;'>{{s6_tr}}{{s6_audio}}{{hint:s6_de}}</div>
+        <div style='font-family: Arial; font-size: 16px; color: SkyBlue;'>{{s7_tr}}{{s7_audio}}{{hint:s7_de}}</div>
+        <div style='font-family: Arial; font-size: 16px; color: white;'>{{s8_tr}}{{s8_audio}}{{hint:s8_de}}</div>
+        <div style='font-family: Arial; font-size: 16px; color: SkyBlue;'>{{s9_tr}}{{s9_audio}}{{hint:s9_de}}</div>
 
 audio:
   engine: "gtts"                        # gtts | edge
@@ -44,7 +123,7 @@ translate:                              # используется только 
   source_lang: "de"
   target_lang: "ru"
   source_field: "base_de"
-  target_field: "base_ru"
+  target_field: "base_tr"
 
 retry:
   attempts: 3                           # число попыток при сетевых ошибках
