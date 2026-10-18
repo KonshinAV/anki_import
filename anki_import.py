@@ -13,6 +13,10 @@
     python3 anki_import.py --config my.yaml     # другой файл настроек
     python3 anki_import.py -h                   # все параметры
 
+При запуске скрипт проверяет, что колода и тип заметки из config.yaml существуют в Anki,
+и создаёт недостающее (тип заметки - по шаблонам из секции note_type).
+С --dry-run все проверки выполняются, но ничего не создаётся и не меняется.
+
 Если Excel-файл из конфига не существует, скрипт создаст его (рядом со скриптом)
 с шапкой из полей и завершится: заполните файл и запустите снова.
 """
@@ -63,6 +67,7 @@ REQUIRED_KEYS = {
     "fields": ["key", "base", "sentences_count", "sentence_fields"],
     "audio": ["engine", "gtts_lang", "edge_voice", "workers", "cache_dir", "keep_files",
               "main_source", "main_dest", "sentence_source", "sentence_dest"],
+    "note_type": ["css", "cards"],
     "translate": ["source_lang", "target_lang", "source_field", "target_field"],
     "retry": ["attempts", "delay"],
 }
@@ -83,6 +88,7 @@ class Config:
         self.fields = raw["fields"]
         self.audio = raw["audio"]
         self.translate = raw["translate"]
+        self.note_type = raw["note_type"]
 
         self.xlsx_path = self.resolve(self.excel["file"])
         self.sheet = self.excel["sheet"]
@@ -96,6 +102,13 @@ class Config:
         self.audio_map: dict[str, str] = {self.audio["main_source"]: self.audio["main_dest"]}
         for i in range(1, n + 1):
             self.audio_map[self.audio["sentence_source"].format(n=i)] = self.audio["sentence_dest"].format(n=i)
+
+        # все поля типа заметки в Anki: текстовые + аудио (в логичном порядке)
+        model_fields: list[str] = list(self.fields["base"]) + [self.audio["main_dest"]]
+        for i in range(1, n + 1):
+            model_fields += [tpl.format(n=i) for tpl in self.fields["sentence_fields"]]
+            model_fields.append(self.audio["sentence_dest"].format(n=i))
+        self.model_fields: list[str] = list(dict.fromkeys(model_fields))   # без дублей, порядок сохранён
 
     def resolve(self, value: str) -> Path:
         """Относительные пути считаем от папки скрипта."""
@@ -122,6 +135,12 @@ def load_config(path: Path, overrides: dict[tuple[str, str], object] | None = No
         raise ValueError(f"В {path.name} не хватает параметров: {', '.join(missing)}")
     if raw["audio"]["engine"] not in ("gtts", "edge"):
         raise ValueError("audio.engine должен быть 'gtts' или 'edge'")
+    cards = raw["note_type"]["cards"]
+    if not isinstance(cards, list) or not cards:
+        raise ValueError("note_type.cards должен быть непустым списком карточек")
+    for idx, card in enumerate(cards, 1):
+        if not isinstance(card, dict) or not all(str(card.get(k, "")).strip() for k in ("name", "front", "back")):
+            raise ValueError(f"note_type.cards[{idx}]: нужны непустые name, front, back")
 
     RETRY["attempts"] = int(raw["retry"]["attempts"])
     RETRY["delay"] = float(raw["retry"]["delay"])
@@ -264,6 +283,15 @@ class AnkiClient:
     def model_fields(self) -> list[str]:
         return self.invoke("modelFieldNames", modelName=self.model_name)
 
+    def deck_names(self) -> list[str]:
+        return self.invoke("deckNames")
+
+    def model_names(self) -> list[str]:
+        return self.invoke("modelNames")
+
+    def media_exists(self, filename: str) -> bool:
+        return bool(self.invoke("getMediaFilesNames", pattern=filename))
+
     # ---- запись ----
     def add_note(self, fields: dict[str, str], tags: list[str] | None = None) -> int:
         note = {
@@ -279,19 +307,145 @@ class AnkiClient:
     def update_fields(self, note_id: int, fields: dict[str, str]) -> None:
         self.invoke("updateNoteFields", note={"id": note_id, "fields": fields})
 
+    def create_deck(self, name: str) -> int:
+        return self.invoke("createDeck", deck=name)
+
+    def create_model(self, name: str, fields: list[str], css: str, cards: list[dict]) -> dict:
+        return self.invoke(
+            "createModel", modelName=name, inOrderFields=fields, css=css, isCloze=False,
+            cardTemplates=[{"Name": str(c["name"]), "Front": str(c["front"]), "Back": str(c["back"])}
+                           for c in cards])
+
     def store_media(self, filename: str, data: bytes) -> None:
         self.invoke("storeMediaFile", filename=filename,
                     data=base64.b64encode(data).decode("ascii"))
 
 
 # --------------------------------------------------------------------------- #
+# Подготовка Anki: колода и тип заметки
+# --------------------------------------------------------------------------- #
+TEMPLATE_TOKEN = re.compile(r"\{\{([^{}]+)\}\}")
+SPECIAL_TOKENS = {"frontside", "tags", "type", "deck", "subdeck", "card", "cardflag"}
+SOUND_TOKEN = re.compile(r"\[sound:([^\]]+)\]")
+
+
+def validate_deck_name(name) -> str:
+    """Проверяет и нормализует имя колоды (вложенность через '::')."""
+    if not isinstance(name, str) or not name.strip():
+        raise ValueError("anki.deck: имя колоды не задано")
+    if re.search(r"[\x00-\x1f]", name):
+        raise ValueError(f"anki.deck: в имени колоды недопустимые управляющие символы: {name!r}")
+    parts = [p.strip() for p in name.split("::")]
+    if any(not p for p in parts):
+        raise ValueError(f"anki.deck: пустая часть в имени колоды (лишние '::' или пробелы): {name!r}")
+    return "::".join(parts)
+
+
+def validate_model_name(name) -> str:
+    if not isinstance(name, str) or not name.strip():
+        raise ValueError("anki.model: имя типа заметки не задано")
+    if re.search(r"[\x00-\x1f]", name):
+        raise ValueError(f"anki.model: в имени недопустимые управляющие символы: {name!r}")
+    return name.strip()
+
+
+def template_fields(template: str) -> set[str]:
+    """Имена полей, на которые ссылается шаблон карточки ({{hint:x}}, {{#x}} и т.п. учитываются)."""
+    names = set()
+    for token in TEMPLATE_TOKEN.findall(template):
+        token = token.strip()
+        if token.startswith(("#", "^", "/")):
+            token = token[1:].strip()
+        name = token.split(":")[-1].strip()
+        if name and name.casefold() not in SPECIAL_TOKENS:
+            names.add(name)
+    return names
+
+
+def ensure_deck(anki: AnkiClient, dry_run: bool = False) -> None:
+    """Проверяет колоду; если её нет - создаёт (в dry-run только сообщает)."""
+    name = validate_deck_name(anki.deck_name)
+    existing = {d.casefold(): d for d in anki.deck_names()}   # Anki считает имена колод регистронезависимыми
+    found = existing.get(name.casefold())
+    if found:
+        if found != name:
+            log.warning("Колода уже есть с другим регистром ('%s'), используем её.", found)
+        anki.deck_name = found
+        log.info("Колода '%s' существует.", found)
+        return
+    anki.deck_name = name
+    if dry_run:
+        log.info("[dry-run] колода '%s' не найдена, будет создана.", name)
+        return
+    anki.create_deck(name)
+    log.info("Колода '%s' создана.", name)
+
+
+def ensure_model(anki: AnkiClient, cfg: Config, dry_run: bool = False) -> list[str]:
+    """Проверяет тип заметки; если его нет - создаёт по config.yaml.
+    Возвращает список полей (реальных или планируемых в dry-run)."""
+    name = validate_model_name(anki.model_name)
+    existing = {m.casefold(): m for m in anki.model_names()}
+    found = existing.get(name.casefold())
+    if found:
+        anki.model_name = found
+        fields = anki.model_fields()
+        log.info("Тип заметки '%s' существует.", found)
+        missing = [f for f in cfg.model_fields if f not in fields]
+        if missing:
+            log.warning("В существующем типе '%s' нет полей из конфига (они не будут заполнены): %s. "
+                        "Тип не изменяется.", found, missing)
+        return fields
+
+    anki.model_name = name
+    fields = cfg.model_fields
+    cards = cfg.note_type["cards"]
+
+    # все поля из шаблонов должны существовать в типе, иначе карточки в Anki будут с ошибкой
+    unknown = {}
+    for card in cards:
+        used = template_fields(str(card["front"])) | template_fields(str(card["back"]))
+        bad = sorted(used - set(fields))
+        if bad:
+            unknown[card["name"]] = bad
+    if unknown:
+        raise ValueError(
+            f"Шаблоны note_type ссылаются на поля, которых нет в типе: {unknown}. "
+            f"Поля типа: {fields}")
+
+    if dry_run:
+        log.info("[dry-run] тип заметки '%s' не найден, будет создан: полей %d, карточек %d (%s).",
+                 name, len(fields), len(cards), ", ".join(str(c["name"]) for c in cards))
+        log.info("[dry-run] поля: %s", ", ".join(fields))
+        return fields
+
+    anki.create_model(name, fields, str(cfg.note_type["css"]), cards)
+    log.info("Тип заметки '%s' создан: полей %d, карточек %d.", name, len(fields), len(cards))
+    return fields
+
+
+def check_template_media(anki: AnkiClient, cfg: Config) -> None:
+    """Предупреждает, если файлы из [sound:...] в шаблонах отсутствуют в медиа-папке Anki."""
+    files = set()
+    for card in cfg.note_type["cards"]:
+        files |= set(SOUND_TOKEN.findall(str(card["front"]) + str(card["back"])))
+    for fname in sorted(files):
+        try:
+            if not anki.media_exists(fname):
+                log.warning("Файл '%s' из шаблона карточки не найден в медиа Anki "
+                            "(положите его в collection.media, иначе звук не проиграется).", fname)
+        except Exception as e:  # noqa: BLE001
+            log.debug("Не удалось проверить медиафайл %s: %s", fname, e)
+
+
+# --------------------------------------------------------------------------- #
 # Импорт заметок
 # --------------------------------------------------------------------------- #
 def import_notes(anki: AnkiClient, cfg: Config, rows: list[dict[str, str]],
-                 dry_run: bool = False) -> list[int]:
-    """Добавляет новые заметки. Возвращает ID добавленных."""
+                 model_fields: list[str],
+                 dry_run: bool = False) -> tuple[list[int], list[dict[str, str]]]:
+    """Добавляет новые заметки. Возвращает (ID добавленных, строки, которые добавились бы в dry-run)."""
     key_field = cfg.key_field
-    model_fields = anki.model_fields()
     if key_field not in model_fields:
         raise RuntimeError(f"В модели '{anki.model_name}' нет поля '{key_field}'. Поля: {model_fields}")
 
@@ -313,6 +467,7 @@ def import_notes(anki: AnkiClient, cfg: Config, rows: list[dict[str, str]],
     }
 
     new_ids: list[int] = []
+    planned: list[dict[str, str]] = []
     added = skipped = failed = 0
     for row in rows:
         key_raw = row.get(key_field, "")
@@ -330,6 +485,7 @@ def import_notes(anki: AnkiClient, cfg: Config, rows: list[dict[str, str]],
         if dry_run:
             log.info("[dry-run] будет добавлено: %s", key_raw)
             existing.add(key)
+            planned.append(row)
             added += 1
             continue
         try:
@@ -343,8 +499,24 @@ def import_notes(anki: AnkiClient, cfg: Config, rows: list[dict[str, str]],
         added += 1
         log.info("Добавлена заметка %s: %s", note_id, key_raw)
 
-    log.info("Импорт: добавлено %d, пропущено %d, ошибок %d", added, skipped, failed)
-    return new_ids
+    log.info("Импорт%s: добавлено %d, пропущено %d, ошибок %d",
+             " (dry-run)" if dry_run else "", added, skipped, failed)
+    return new_ids, planned
+
+
+def plan_audio_for_rows(cfg: Config, rows: list[dict[str, str]]) -> None:
+    """dry-run: сколько текстов будет озвучено для заметок, которые ещё не добавлены."""
+    texts = set()
+    fields = 0
+    for row in rows:
+        for src in cfg.audio_map:
+            text = clean_text(row.get(src, ""))
+            if text:
+                fields += 1
+                texts.add(text)
+    if fields:
+        log.info("[dry-run] для новых заметок будет озвучено: полей %d, уникальных текстов %d",
+                 fields, len(texts))
 
 
 # --------------------------------------------------------------------------- #
@@ -639,43 +811,60 @@ def main(argv=None) -> int:
         ("audio", "keep_files"): True if args.keep_audio else None,
     })
 
-    new_ids: list[int] = []
-    if not args.audio_only:
-        # Excel-файл должен существовать; если нет, создаём шапку и останавливаемся
-        if not cfg.xlsx_path.is_file():
-            if args.dry_run:
-                log.info("[dry-run] Excel-файл %s не найден, будет создан с шапкой.", cfg.xlsx_path)
-            else:
-                create_excel_template(cfg)
-                log.warning("Excel-файл не найден, создан новый: %s (лист '%s', колонок: %d)",
-                            cfg.xlsx_path, cfg.sheet, len(cfg.text_fields))
-                log.warning("Заполните его данными и запустите скрипт снова.")
-            return 0
+    dry = args.dry_run
+    excel_missing = not args.audio_only and not cfg.xlsx_path.is_file()
+
+    # Excel нет: создаём шапку и останавливаемся (Anki для этого не нужен)
+    if excel_missing and not dry:
+        create_excel_template(cfg)
+        log.warning("Excel-файл не найден, создан новый: %s (лист '%s', колонок: %d)",
+                    cfg.xlsx_path, cfg.sheet, len(cfg.text_fields))
+        log.warning("Заполните его данными и запустите скрипт снова.")
+        return 0
+
+    if dry:
+        log.info("[dry-run] Режим проверки: в Anki и в файлах ничего меняться не будет.")
 
     anki = AnkiClient(cfg.anki["url"], cfg.anki["deck"], cfg.anki["model"],
                       timeout=int(cfg.anki["timeout"]))
     anki.invoke("version")      # быстрая проверка соединения
 
+    # колода и тип заметки: проверить, при необходимости создать
+    ensure_deck(anki, dry_run=dry)
+    model_fields = ensure_model(anki, cfg, dry_run=dry)
+    check_template_media(anki, cfg)
+
+    new_ids: list[int] = []
+    planned_rows: list[dict[str, str]] = []
     if not args.audio_only:
-        rows = read_xlsx_file(cfg.xlsx_path, cfg.sheet)
-        log.info("Прочитано строк из Excel: %d (%s)", len(rows), cfg.xlsx_path.name)
-        new_ids = import_notes(anki, cfg, rows, dry_run=args.dry_run)
+        if excel_missing:           # только dry-run
+            log.info("[dry-run] Excel-файл %s не найден, будет создан с шапкой "
+                     "(импорт в этот запуск не попадёт).", cfg.xlsx_path)
+        else:
+            rows = read_xlsx_file(cfg.xlsx_path, cfg.sheet)
+            log.info("Прочитано строк из Excel: %d (%s)", len(rows), cfg.xlsx_path.name)
+            new_ids, planned_rows = import_notes(anki, cfg, rows, model_fields, dry_run=dry)
 
     if args.translate:
-        translate_empty(anki, cfg, dry_run=args.dry_run)
+        translate_empty(anki, cfg, dry_run=dry)
 
     if not args.no_audio:
         engine = make_engine(cfg)
         only_ids = set(new_ids) if args.new_only else None
-        if tqdm is None and not args.dry_run:
+        if tqdm is None and not dry:
             log.info("Совет: pip install tqdm — появится полоса загрузки при озвучке.")
         try:
             with log_with_progress():
+                if dry and planned_rows:
+                    plan_audio_for_rows(cfg, planned_rows)
                 make_audio_records(anki, cfg, engine, only_ids=only_ids,
-                                   overwrite=args.overwrite_audio, dry_run=args.dry_run)
+                                   overwrite=args.overwrite_audio, dry_run=dry)
         finally:
-            if not cfg.audio["keep_files"]:
+            if not cfg.audio["keep_files"] and not dry:
                 cleanup_cache(cfg.cache_dir)
+
+    if dry:
+        log.info("[dry-run] Завершено: никаких изменений внесено не было.")
     return 0
 
 
