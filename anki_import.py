@@ -1,4 +1,4 @@
-#!/usr/local/bin/python3
+#!/usr/bin/env python3
 """
 Импорт заметок из Excel в Anki (через AnkiConnect) + озвучка (gTTS / edge-tts).
 Все настройки лежат в config.yaml рядом со скриптом.
@@ -29,6 +29,7 @@ import re
 import sys
 import time
 from concurrent.futures import ThreadPoolExecutor
+from contextlib import nullcontext
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -39,6 +40,13 @@ try:
     import yaml
 except ImportError:
     sys.exit("Нужен пакет PyYAML: pip install pyyaml")
+
+try:                                    # полоса загрузки (необязательная зависимость)
+    from tqdm import tqdm
+    from tqdm.contrib.logging import logging_redirect_tqdm
+except ImportError:
+    tqdm = None
+    logging_redirect_tqdm = None
 
 log = logging.getLogger("anki_import")
 
@@ -142,6 +150,26 @@ def clean_text(value: str) -> str:
     value = re.sub(r"<[^>]+>", " ", value)
     value = html.unescape(value)
     return re.sub(r"\s+", " ", value).strip()
+
+
+class _NoBar:
+    """Заглушка, если tqdm не установлен: ничего не рисует."""
+    def update(self, n: int = 1) -> None: pass
+    def close(self) -> None: pass
+    def __enter__(self): return self
+    def __exit__(self, *exc): return False
+
+
+def progress(total: int, desc: str, unit: str = "шт"):
+    """Полоса загрузки в stderr (потокобезопасная). Без tqdm — пустая заглушка."""
+    if tqdm is None or total <= 0:
+        return _NoBar()
+    return tqdm(total=total, desc=desc, unit=unit, file=sys.stderr, dynamic_ncols=True)
+
+
+def log_with_progress():
+    """Лог-сообщения не ломают полосу загрузки."""
+    return logging_redirect_tqdm() if tqdm is not None else nullcontext()
 
 
 def cell_to_str(value) -> str:
@@ -374,9 +402,15 @@ class GoogleTTS:
             log.error("gTTS не смог озвучить '%s': %s", text[:50], e)
             return text, None
 
-    def synthesize_many(self, texts: list[str]) -> dict[str, bytes | None]:
+    def synthesize_many(self, texts: list[str], on_done=None) -> dict[str, bytes | None]:
+        def task(text: str):
+            result = self._safe(text)
+            if on_done:
+                on_done()           # текст обработан (успешно или с ошибкой)
+            return result
+
         with ThreadPoolExecutor(max_workers=self.workers) as pool:
-            return dict(pool.map(self._safe, texts))
+            return dict(pool.map(task, texts))
 
 
 class EdgeTTS:
@@ -408,12 +442,19 @@ class EdgeTTS:
                     await asyncio.sleep(RETRY["delay"] * attempt)
         return text, None
 
-    async def _many(self, texts: list[str]) -> dict[str, bytes | None]:
+    async def _many(self, texts: list[str], on_done=None) -> dict[str, bytes | None]:
         sem = asyncio.Semaphore(self.workers)
-        return dict(await asyncio.gather(*(self._one(t, sem) for t in texts)))
 
-    def synthesize_many(self, texts: list[str]) -> dict[str, bytes | None]:
-        return asyncio.run(self._many(texts))   # один event loop на весь пакет
+        async def tracked(text: str):
+            result = await self._one(text, sem)
+            if on_done:
+                on_done()
+            return result
+
+        return dict(await asyncio.gather(*(tracked(t) for t in texts)))
+
+    def synthesize_many(self, texts: list[str], on_done=None) -> dict[str, bytes | None]:
+        return asyncio.run(self._many(texts, on_done))   # один event loop на весь пакет
 
 
 def make_engine(cfg: Config):
@@ -474,7 +515,9 @@ def build_audio(engine, texts: list[str], cache_dir: Path) -> dict[str, tuple[st
 
     if missing:
         log.info("Генерация озвучки: %d уникальных текстов (%s)", len(missing), engine.name)
-        for text, data in engine.synthesize_many(missing).items():
+        with progress(len(missing), "Озвучка", "текст") as bar:
+            generated = engine.synthesize_many(missing, on_done=bar.update)
+        for text, data in generated.items():
             if data:
                 name = audio_filename(engine, text)
                 (cache_dir / name).write_bytes(data)
@@ -500,24 +543,29 @@ def make_audio_records(anki: AnkiClient, cfg: Config, engine,
 
     audio = build_audio(engine, texts, cfg.cache_dir)
 
-    uploaded: set[str] = set()
+    to_upload: dict[str, bytes] = {}
     updates: dict[int, dict[str, str]] = {}
     for job in jobs:
         if job.text not in audio:
             continue            # озвучить не удалось, при следующем запуске повторится
         name, data = audio[job.text]
-        if name not in uploaded:
-            retry(lambda: anki.store_media(name, data), what=f"загрузка {name}")
-            uploaded.add(name)
+        to_upload[name] = data
         updates.setdefault(job.note_id, {})[job.dest_field] = f"[sound:{name}]"
 
+    with progress(len(to_upload), "Загрузка аудио в Anki", "файл") as bar:
+        for name, data in to_upload.items():
+            retry(lambda: anki.store_media(name, data), what=f"загрузка {name}")
+            bar.update()
+
     # одно обновление на заметку, сразу со всеми аудио-полями
-    for note_id, fields in updates.items():
-        try:
-            retry(lambda: anki.update_fields(note_id, fields), what=f"обновление заметки {note_id}")
-        except Exception as e:  # noqa: BLE001
-            log.error("Не удалось обновить заметку %s: %s", note_id, e)
-    log.info("Озвучка: обновлено заметок %d, файлов загружено %d", len(updates), len(uploaded))
+    with progress(len(updates), "Обновление заметок", "заметка") as bar:
+        for note_id, fields in updates.items():
+            try:
+                retry(lambda: anki.update_fields(note_id, fields), what=f"обновление заметки {note_id}")
+            except Exception as e:  # noqa: BLE001
+                log.error("Не удалось обновить заметку %s: %s", note_id, e)
+            bar.update()
+    log.info("Озвучка: обновлено заметок %d, файлов загружено %d", len(updates), len(to_upload))
 
 
 def cleanup_cache(cache_dir: Path) -> None:
@@ -619,9 +667,12 @@ def main(argv=None) -> int:
     if not args.no_audio:
         engine = make_engine(cfg)
         only_ids = set(new_ids) if args.new_only else None
+        if tqdm is None and not args.dry_run:
+            log.info("Совет: pip install tqdm — появится полоса загрузки при озвучке.")
         try:
-            make_audio_records(anki, cfg, engine, only_ids=only_ids,
-                               overwrite=args.overwrite_audio, dry_run=args.dry_run)
+            with log_with_progress():
+                make_audio_records(anki, cfg, engine, only_ids=only_ids,
+                                   overwrite=args.overwrite_audio, dry_run=args.dry_run)
         finally:
             if not cfg.audio["keep_files"]:
                 cleanup_cache(cfg.cache_dir)
