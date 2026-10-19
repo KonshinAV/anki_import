@@ -4,7 +4,7 @@
 
 anki:
   url: "http://localhost:8765"          # адрес AnkiConnect
-  deck: "Deutsche Lernen::IMPORT"     # колода (создаётся автоматически, если её нет; "::" = вложенность)
+  deck: "Deutsch Lernen::IMPORT"     # колода (создаётся автоматически, если её нет; "::" = вложенность)
   model: "Basic (and reversed card)_main"   # тип заметки (создаётся автоматически, если его нет)
   timeout: 60                           # таймаут запросов к AnkiConnect, сек
 
