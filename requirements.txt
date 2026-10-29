@@ -9,5 +9,4 @@ gTTS>=2.3            # озвучка (audio.engine: gtts, по умолчани
  
 # --- опциональные (импортируются только при использовании) ---
 edge-tts>=6.1        # озвучка (audio.engine: edge / --engine edge)
-deep-translator>=1.11  # автоперевод (--translate)
 tqdm>=4.60           # полоса загрузки при озвучке

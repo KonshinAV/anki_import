@@ -119,12 +119,6 @@ audio:
   sentence_source: "s{n}_de"
   sentence_dest: "s{n}_audio"
 
-translate:                              # используется только с флагом --translate
-  source_lang: "de"
-  target_lang: "ru"
-  source_field: "base_de"
-  target_field: "base_tr"
-
 retry:
   attempts: 3                           # число попыток при сетевых ошибках
   delay: 2.0                            # базовая пауза между попытками, сек

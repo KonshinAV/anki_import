@@ -9,7 +9,6 @@
     python3 anki_import.py --engine edge        # озвучка через edge-tts
     python3 anki_import.py --no-audio           # только импорт
     python3 anki_import.py --audio-only         # только озвучка пустых аудио-полей
-    python3 anki_import.py --translate          # заполнить пустые base_ru переводом
     python3 anki_import.py --config my.yaml     # другой файл настроек
     python3 anki_import.py -h                   # все параметры
 
@@ -68,7 +67,6 @@ REQUIRED_KEYS = {
     "audio": ["engine", "gtts_lang", "edge_voice", "workers", "cache_dir", "keep_files",
               "main_source", "main_dest", "sentence_source", "sentence_dest"],
     "note_type": ["css", "cards"],
-    "translate": ["source_lang", "target_lang", "source_field", "target_field"],
     "retry": ["attempts", "delay"],
 }
 
@@ -87,7 +85,6 @@ class Config:
         self.excel = raw["excel"]
         self.fields = raw["fields"]
         self.audio = raw["audio"]
-        self.translate = raw["translate"]
         self.note_type = raw["note_type"]
 
         self.xlsx_path = self.resolve(self.excel["file"])
@@ -520,34 +517,6 @@ def plan_audio_for_rows(cfg: Config, rows: list[dict[str, str]]) -> None:
 
 
 # --------------------------------------------------------------------------- #
-# Перевод (необязательно)
-# --------------------------------------------------------------------------- #
-def translate_empty(anki: AnkiClient, cfg: Config, dry_run: bool = False) -> None:
-    try:
-        from deep_translator import GoogleTranslator
-    except ImportError:
-        raise RuntimeError("Для --translate нужен пакет: pip install deep-translator")
-    t = cfg.translate
-    translator = GoogleTranslator(source=t["source_lang"], target=t["target_lang"])
-    src_field, dst_field = t["source_field"], t["target_field"]
-
-    notes = [n for n in anki.deck_notes() if src_field in n["fields"] and dst_field in n["fields"]]
-    for i, note in enumerate(notes, 1):
-        src = clean_text(note["fields"][src_field]["value"])
-        dst = note["fields"][dst_field]["value"].strip()
-        if not src or dst:
-            continue
-        log.info("[%d/%d] перевод: %s", i, len(notes), src)
-        if dry_run:
-            continue
-        try:
-            translated = retry(lambda: translator.translate(src), what=f"перевод '{src}'")
-            anki.update_fields(note["noteId"], {dst_field: translated})
-        except Exception as e:  # noqa: BLE001
-            log.error("Не удалось перевести '%s': %s", src, e)
-
-
-# --------------------------------------------------------------------------- #
 # TTS-движки: общий интерфейс synthesize_many(texts) -> {text: bytes | None}
 # --------------------------------------------------------------------------- #
 class GoogleTTS:
@@ -787,8 +756,6 @@ def parse_args(argv=None):
                    help="Озвучивать только заметки, добавленные в этом запуске")
     p.add_argument("--overwrite-audio", action="store_true",
                    help="Перезаписывать уже заполненные аудио-поля")
-    p.add_argument("--translate", action="store_true",
-                   help="Заполнить пустые поля перевода (нужен deep-translator)")
     p.add_argument("-v", "--verbose", action="store_true", help="Подробный лог")
     return p.parse_args(argv)
 
@@ -844,9 +811,6 @@ def main(argv=None) -> int:
             rows = read_xlsx_file(cfg.xlsx_path, cfg.sheet)
             log.info("Прочитано строк из Excel: %d (%s)", len(rows), cfg.xlsx_path.name)
             new_ids, planned_rows = import_notes(anki, cfg, rows, model_fields, dry_run=dry)
-
-    if args.translate:
-        translate_empty(anki, cfg, dry_run=dry)
 
     if not args.no_audio:
         engine = make_engine(cfg)
