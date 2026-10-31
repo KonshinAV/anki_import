@@ -2,11 +2,14 @@
 # Относительные пути считаются от папки, в которой лежит скрипт.
 # Параметры командной строки (--deck, --file и т.д.) имеют приоритет над этим файлом.
 
+ui:
+  language: "de"                            # язык сообщений в консоли / Sprache der Konsolenausgabe: ru | de
+
 anki:
-  url: "http://localhost:8765"          # адрес AnkiConnect
-  deck: "Deutsche Lernen::IMPORT"     # колода (создаётся автоматически, если её нет; "::" = вложенность)
+  url: "http://localhost:8765"              # адрес AnkiConnect
+  deck: "Deutsch Lernen::IMPORT"            # колода (создаётся автоматически, если её нет; "::" = вложенность)
   model: "Basic (and reversed card)_main"   # тип заметки (создаётся автоматически, если его нет)
-  timeout: 60                           # таймаут запросов к AnkiConnect, сек
+  timeout: 60                               # таймаут запросов к AnkiConnect, сек
 
 excel:
   file: "for_import.xlsx"               # если файла нет, он будет создан с шапкой
@@ -118,12 +121,6 @@ audio:
   main_dest: "base_audio"
   sentence_source: "s{n}_de"
   sentence_dest: "s{n}_audio"
-
-translate:                              # используется только с флагом --translate
-  source_lang: "de"
-  target_lang: "ru"
-  source_field: "base_de"
-  target_field: "base_tr"
 
 retry:
   attempts: 3                           # число попыток при сетевых ошибках
