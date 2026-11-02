@@ -23,7 +23,7 @@
 ## Установка
 
 ```bash
-git clone <URL-репозитория>
+git clone https://github.com/KonshinAV/anki_import.git
 cd <папка-репозитория>
 pip install -r requirements.txt
 ```
