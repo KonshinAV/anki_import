@@ -106,8 +106,6 @@ note_type:
         <i style=color:lime;">{{type:full_de}}</i>
         <br><i style=color:yellow;">{{base_tr}}{{base_audio}}</i>
         <br><hr>
-        <div style="display:none">[sound:_1-minute-of-silence.mp3]</div>
-
         <div style='font-family: Arial; font-size: 16px;'></div><br>
         <div style='font-family: Arial; font-size: 16px; color: SkyBlue;'>{{s1_tr}}{{s1_audio}}{{hint:s1_de}}</div>
         <div style='font-family: Arial; font-size: 16px; color: white;'>{{s2_tr}}{{s2_audio}}{{hint:s2_de}}</div>
