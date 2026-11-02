@@ -23,7 +23,7 @@ Das Skript importiert Notizen aus Excel nach Anki (über [AnkiConnect](https://a
 ## Installation
 
 ```bash
-git clone <Repository-URL>
+git clone https://github.com/KonshinAV/anki_import.git
 cd <Repository-Ordner>
 pip install -r requirements.txt
 ```
