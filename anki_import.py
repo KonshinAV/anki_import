@@ -86,6 +86,10 @@ MESSAGES: dict[str, tuple[str, str]] = {
                   "note_type.cards muss eine nicht leere Liste von Karten sein"),
     "cfg_card_fields": ("note_type.cards[{idx}]: нужны непустые name, front, back",
                         "note_type.cards[{idx}]: name, front und back dürfen nicht leer sein"),
+    "cfg_sentences": ("fields.sentences должен быть непустым списком",
+                      "fields.sentences muss eine nicht leere Liste sein"),
+    "cfg_sentence_item": ("fields.sentences[{idx}]: нужны непустые de и tr (audio - необязательно)",
+                          "fields.sentences[{idx}]: de und tr dürfen nicht leer sein (audio ist optional)"),
     # --- повторы / операции ---
     "retry_fail": ("{what}: попытка {n}/{attempts} не удалась ({err}), повтор...",
                    "{what}: Versuch {n}/{attempts} fehlgeschlagen ({err}), neuer Versuch..."),
@@ -232,9 +236,9 @@ def t(msg_id: str, /, **kw) -> str:
 REQUIRED_KEYS = {
     "anki": ["url", "deck", "model", "timeout"],
     "excel": ["file", "sheet"],
-    "fields": ["key", "base", "sentences_count", "sentence_fields"],
+    "fields": ["key", "base", "sentences"],
     "audio": ["engine", "gtts_lang", "edge_voice", "workers", "cache_dir", "keep_files",
-              "main_source", "main_dest", "sentence_source", "sentence_dest"],
+              "main_source", "main_dest"],
     "note_type": ["css", "cards"],
     "retry": ["attempts", "delay"],
 }
@@ -261,19 +265,27 @@ class Config:
         self.cache_dir = self.resolve(self.audio["cache_dir"])
         self.key_field = self.fields["key"]
 
-        n = int(self.fields["sentences_count"])
-        self.text_fields: list[str] = list(self.fields["base"]) + [
-            tpl.format(n=i) for i in range(1, n + 1) for tpl in self.fields["sentence_fields"]
+        # предложения: явный список {de, tr, audio?}; имена полей любые
+        self.sentences: list[dict[str, str]] = [
+            {k: str(s[k]).strip() for k in ("de", "tr", "audio") if s.get(k)}
+            for s in self.fields["sentences"]
         ]
+
+        self.text_fields: list[str] = list(self.fields["base"])
+        for s in self.sentences:
+            self.text_fields += [s["de"], s["tr"]]
+
         self.audio_map: dict[str, str] = {self.audio["main_source"]: self.audio["main_dest"]}
-        for i in range(1, n + 1):
-            self.audio_map[self.audio["sentence_source"].format(n=i)] = self.audio["sentence_dest"].format(n=i)
+        for s in self.sentences:
+            if "audio" in s:
+                self.audio_map[s["de"]] = s["audio"]
 
         # все поля типа заметки в Anki: текстовые + аудио (в логичном порядке)
         model_fields: list[str] = list(self.fields["base"]) + [self.audio["main_dest"]]
-        for i in range(1, n + 1):
-            model_fields += [tpl.format(n=i) for tpl in self.fields["sentence_fields"]]
-            model_fields.append(self.audio["sentence_dest"].format(n=i))
+        for s in self.sentences:
+            model_fields += [s["de"], s["tr"]]
+            if "audio" in s:
+                model_fields.append(s["audio"])
         self.model_fields: list[str] = list(dict.fromkeys(model_fields))   # без дублей, порядок сохранён
 
     def resolve(self, value: str) -> Path:
@@ -316,6 +328,13 @@ def load_config(path: Path, overrides: dict[tuple[str, str], object] | None = No
     for idx, card in enumerate(cards, 1):
         if not isinstance(card, dict) or not all(str(card.get(k, "")).strip() for k in ("name", "front", "back")):
             raise ValueError(t("cfg_card_fields", idx=idx))
+
+    sentences = raw["fields"]["sentences"]
+    if not isinstance(sentences, list) or not sentences:
+        raise ValueError(t("cfg_sentences"))
+    for idx, s in enumerate(sentences, 1):
+        if not isinstance(s, dict) or not all(str(s.get(k, "")).strip() for k in ("de", "tr")):
+            raise ValueError(t("cfg_sentence_item", idx=idx))
 
     RETRY["attempts"] = int(raw["retry"]["attempts"])
     RETRY["delay"] = float(raw["retry"]["delay"])

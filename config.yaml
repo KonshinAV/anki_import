@@ -24,15 +24,25 @@ fields:
     - full_de
     - audio_text_de
     - base_tr
-  # Поля предложений: шаблоны, {n} подставляется от 1 до sentences_count
-  sentences_count: 9
-  sentence_fields:
-    - "s{n}_de"
-    - "s{n}_tr"
+  # Предложения задаются явно (никаких масок {n}), имена полей - любые:
+  #   de    - поле с немецким предложением (обязательно)
+  #   tr    - поле с переводом (обязательно)
+  #   audio - поле для [sound:...] (необязательно; без него предложение не озвучивается)
+  # Количество предложений = число элементов списка.
+  sentences:
+    - { de: s1_de, tr: s1_tr, audio: s1_audio }
+    - { de: s2_de, tr: s2_tr, audio: s2_audio }
+    - { de: s3_de, tr: s3_tr, audio: s3_audio }
+    - { de: s4_de, tr: s4_tr, audio: s4_audio }
+    - { de: s5_de, tr: s5_tr, audio: s5_audio }
+    - { de: s6_de, tr: s6_tr, audio: s6_audio }
+    - { de: s7_de, tr: s7_tr, audio: s7_audio }
+    - { de: s8_de, tr: s8_tr, audio: s8_audio }
+    - { de: s9_de, tr: s9_tr, audio: s9_audio }
 
 # Содержимое типа заметки. Используется ТОЛЬКО при создании типа (если его ещё нет в Anki).
-# Поля типа строятся автоматически: fields.base + audio.main_dest + для каждого n:
-#   sentence_fields + audio.sentence_dest.
+# Поля типа строятся автоматически: fields.base + audio.main_dest + для каждого
+#   элемента fields.sentences: de, tr и audio (если указан).
 # Все {{поля}} из шаблонов должны быть среди этих полей, иначе скрипт остановится до создания типа.
 note_type:
   css: |
@@ -119,8 +129,6 @@ audio:
   # Какое поле озвучиваем -> в какое кладём [sound:...]
   main_source: "audio_text_de"
   main_dest: "base_audio"
-  sentence_source: "s{n}_de"
-  sentence_dest: "s{n}_audio"
 
 retry:
   attempts: 3                           # число попыток при сетевых ошибках
