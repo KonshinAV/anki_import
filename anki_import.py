@@ -307,8 +307,7 @@ def load_config(path: Path, overrides: dict[tuple[str, str], object] | None = No
         if value is not None:
             raw.setdefault(section, {})[key] = value
 
-    # язык интерфейса (необязательный параметр, по умолчанию ru) - задаём как можно раньше,
-    # чтобы дальнейшие сообщения об ошибках уже были на выбранном языке
+    # язык интерфейса (необязательный параметр, по умолчанию de) - задаём как можно раньше, чтобы дальнейшие сообщения об ошибках уже были на выбранном языке
     ui = raw.get("ui")
     lang = ui.get("language", DEFAULT_LANG) if isinstance(ui, dict) else DEFAULT_LANG
     lang = str(lang).strip().lower()
