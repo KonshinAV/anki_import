@@ -1,6 +1,6 @@
-# Конфигурация anki_import.py
-# Относительные пути считаются от папки, в которой лежит скрипт.
-# Параметры командной строки (--deck, --file и т.д.) имеют приоритет над этим файлом.
+# Конфигурация anki_import.py / Konfiguration von anki_import.py
+# Относительные пути считаются от папки, в которой лежит скрипт. / Relative Pfade werden ausgehend von dem Ordner berechnet, in dem sich das Skript befindet.
+# Параметры командной строки (--deck, --file и т.д.) имеют приоритет над этим файлом. / Befehlszeilenparameter (--deck, --file usw.) haben Vorrang vor dieser Datei.
 
 ui:
   language: "de"                            # язык сообщений в консоли / Sprache der Konsolenausgabe: ru | de
