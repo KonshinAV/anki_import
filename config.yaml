@@ -6,29 +6,27 @@ ui:
   language: "de"                            # язык сообщений в консоли / Sprache der Konsolenausgabe: ru | de
 
 anki:
-  url: "http://localhost:8765"              # адрес AnkiConnect
-  deck: "Deutsch Lernen::IMPORT"            # колода (создаётся автоматически, если её нет; "::" = вложенность)
-  model: "Basic (and reversed card)_main"   # тип заметки (создаётся автоматически, если его нет)
-  timeout: 60                               # таймаут запросов к AnkiConnect, сек
+  url: "http://localhost:8765"              # адрес AnkiConnect / Die Ardesse von Anki
+  deck: "Deutsch Lernen::IMPORT"            # колода (создаётся автоматически, если её нет; "::" = вложенность) / Deck (wird automatisch erstellt, falls noch nicht vorhanden; „::“ = Verschachtelung)
+  model: "Basic (and reversed card)_main"   # тип заметки (создаётся автоматически, если его нет) / Notiztyp (wird automatisch erstellt, falls noch nicht vorhanden)
+  timeout: 60                               # таймаут запросов к AnkiConnect, сек / Zeitlimit für Anfragen an AnkiConnect, Sek.
 
 excel:
-  file: "for_import.xlsx"               # если файла нет, он будет создан с шапкой
-  sheet: "Sheet1"                       # лист с данными
+  file: "for_import.xlsx"               # если файла нет, он будет создан с шапкой / Wenn die Datei nicht vorhanden ist, wird sie mit einem Header erstellt
+  sheet: "Sheet1"                       # лист с данными / Datenblatt
 
 fields:
-  # Поле, по которому определяются дубликаты (колонка в Excel = поле в Anki)
+  # Поле, по которому определяются дубликаты (колонка в Excel = поле в Anki) / Feld, anhand dessen Duplikate ermittelt werden (Spalte in Excel = Feld in Anki)
   key: "base_de"
-  # Обычные поля (они же колонки Excel, в этом порядке)
+  # Обычные поля (они же колонки Excel, в этом порядке) / Normale Felder (auch bekannt als Excel-Spalten, in dieser Reihenfolge)
   base:
     - base_de
     - full_de
     - audio_text_de
     - base_tr
-  # Предложения задаются явно (никаких масок {n}), имена полей - любые:
-  #   de    - поле с немецким предложением (обязательно)
-  #   tr    - поле с переводом (обязательно)
-  #   audio - поле для [sound:...] (необязательно; без него предложение не озвучивается)
-  # Количество предложений = число элементов списка.
+  #   de    - поле с немецким предложением (обязательно) / Feld mit einem deutschen Satz (erforderlich)
+  #   tr    - поле с переводом (обязательно) / Feld mit der Übersetzung (erforderlich)
+  #   audio - поле для [sound:...] (необязательно; без него предложение не озвучивается) / Feld für [sound:...] (optional; ohne dieses Feld wird der Satz nicht vorgelesen) 
   sentences:
     - { de: s1_de, tr: s1_tr, audio: s1_audio }
     - { de: s2_de, tr: s2_tr, audio: s2_audio }
@@ -40,10 +38,10 @@ fields:
     - { de: s8_de, tr: s8_tr, audio: s8_audio }
     - { de: s9_de, tr: s9_tr, audio: s9_audio }
 
-# Содержимое типа заметки. Используется ТОЛЬКО при создании типа (если его ещё нет в Anki).
-# Поля типа строятся автоматически: fields.base + audio.main_dest + для каждого
-#   элемента fields.sentences: de, tr и audio (если указан).
-# Все {{поля}} из шаблонов должны быть среди этих полей, иначе скрипт остановится до создания типа.
+# Содержимое типа заметки. Используется ТОЛЬКО при создании типа (если его ещё нет в Anki). / Inhalt vom Typ „Notiz“. Wird NUR beim Anlegen dieses Typs verwendet (sofern er noch nicht in Anki vorhanden ist).
+# Поля типа строятся автоматически: fields.base + audio.main_dest + для каждого элемента fields.sentences: de, tr и audio (если указан). /
+# / Felder dieses Typs werden automatisch erstellt: fields.base + audio.main_dest + für jedes Element fields.sentences: de, tr und audio (sofern angegeben).
+# Все {{поля}} из шаблонов должны быть среди этих полей, иначе скрипт остановится до создания типа. / Alle {{Felder}} aus den Vorlagen müssen unter diesen Feldern enthalten sein, andernfalls bricht das Skript ab, bevor der Typ erstellt wird.
 note_type:
   css: |
     .card {
@@ -52,7 +50,7 @@ note_type:
       text-align: center;
     }
   cards:
-    # Карточка 1: немецкий -> русский
+    # Карточка 1: немецкий -> русский / Karte 1: Deutsch -> Russisch
     - name: "Card 1"
       front: |
         <i style="color:yellow;">{{base_de}}{{base_audio}}</i>
@@ -86,7 +84,7 @@ note_type:
         <div style='font-family: Arial; font-size: 16px; color: white;'>{{s8_de}}{{s8_audio}}{{hint:s8_tr}}</div>
         <div style='font-family: Arial; font-size: 16px; color: SkyBlue;'>{{s9_de}}{{s9_audio}}{{hint:s9_tr}}</div>
 
-    # Карточка 2: русский -> немецкий (с вводом {{type:full_de}})
+    # Карточка 2: русский -> немецкий (с вводом {{type:full_de}}) / Karte 2: Russisch -> Deutsch (mit Eingabe von {{type:full_de}})
     - name: "Card 2"
       front: |
         <i style=color:yellow;">{{base_tr}}{{base_audio}}</i><br>
@@ -119,15 +117,15 @@ note_type:
 
 audio:
   engine: "gtts"                        # gtts | edge
-  gtts_lang: "de"                       # язык для gTTS
-  edge_voice: "de-DE-KatjaNeural"       # для edge-tts: de-DE-KatjaNeural (жен.) / de-DE-KillianNeural (муж.)
-  workers: 4                            # параллельных запросов к TTS
-  cache_dir: "tmp_audio"                # временная папка для .mp3
-  keep_files: false                     # true = не удалять .mp3 после выполнения
-  # Какое поле озвучиваем -> в какое кладём [sound:...]
+  gtts_lang: "de"                       # язык для gTTS / Sprache für gTTS
+  edge_voice: "de-DE-KatjaNeural"       # для edge-tts: de-DE-KatjaNeural (жен.) / de-DE-KillianNeural (муж.) / für edge-tts: de-DE-KatjaNeural (weiblich) / de-DE-KillianNeural (männlich)
+  workers: 4                            # параллельных запросов к TTS / parallele Anfragen an TTS
+  cache_dir: "tmp_audio"                # временная папка для .mp3 / Temporärer Ordner für .mp3-Dateien
+  keep_files: false                     # true = не удалять .mp3 после выполнения / true = .mp3-Datei nach der Ausführung nicht löschen
+  # Какое поле озвучиваем -> в какое кладём [sound:...] /   # Welches Feld soll vertonen werden -> in welches fügen wir [sound:...] ein
   main_source: "audio_text_de"
   main_dest: "base_audio"
 
 retry:
-  attempts: 3                           # число попыток при сетевых ошибках
-  delay: 2.0                            # базовая пауза между попытками, сек
+  attempts: 3                           # число попыток при сетевых ошибках / Anzahl der Versuche bei Netzwerkfehlern
+  delay: 2.0                            # базовая пауза между попытками, сек / Standardpause zwischen den Versuchen, Sek.
