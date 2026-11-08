@@ -66,7 +66,7 @@ DEFAULT_CONFIG = SCRIPT_DIR / "config.yaml"
 # Локализация сообщений (ru / de)
 # --------------------------------------------------------------------------- #
 SUPPORTED_LANGS = ("ru", "de")
-DEFAULT_LANG = "ru"
+DEFAULT_LANG = "de"
 _LANG = DEFAULT_LANG
 
 # ключ: (русский текст, немецкий текст); подстановки {name} - через str.format
@@ -205,6 +205,42 @@ MESSAGES: dict[str, tuple[str, str]] = {
     "cache_remove_failed": ("Не удалось удалить {path}: {err}",
                             "{path} konnte nicht gelöscht werden: {err}"),
     "cache_removed": ("Удалено временных .mp3: {n}", "Temporäre .mp3-Dateien gelöscht: {n}"),
+    # --- справка по аргументам командной строки ---
+    "arg_description": ("Импорт из Excel в Anki + озвучка. Настройки: config.yaml",
+                        "Excel-Import nach Anki + Vertonung. Einstellungen: config.yaml"),
+    "arg_config": ("Файл конфигурации (по умолчанию config.yaml рядом со скриптом)",
+                   "Konfigurationsdatei (Standard: config.yaml neben dem Skript)"),
+    "arg_lang": ("Язык сообщений (перекрывает ui.language)",
+                 "Sprache der Meldungen (überschreibt ui.language)"),
+    "arg_file": ("Excel-файл (перекрывает excel.file)",
+                 "Excel-Datei (überschreibt excel.file)"),
+    "arg_sheet": ("Имя листа (перекрывает excel.sheet)",
+                  "Name des Tabellenblatts (überschreibt excel.sheet)"),
+    "arg_deck": ("Колода (перекрывает anki.deck)",
+                 "Stapel (überschreibt anki.deck)"),
+    "arg_model": ("Тип заметки (перекрывает anki.model)",
+                  "Notiztyp (überschreibt anki.model)"),
+    "arg_url": ("URL AnkiConnect (перекрывает anki.url)",
+                "AnkiConnect-URL (überschreibt anki.url)"),
+    "arg_engine": ("Движок озвучки (перекрывает audio.engine)",
+                   "Vertonungs-Engine (überschreibt audio.engine)"),
+    "arg_voice": ("Голос для edge-tts (перекрывает audio.edge_voice)",
+                  "Stimme für edge-tts (überschreibt audio.edge_voice)"),
+    "arg_workers": ("Число параллельных запросов к TTS (перекрывает audio.workers)",
+                    "Anzahl paralleler TTS-Anfragen (überschreibt audio.workers)"),
+    "arg_cache_dir": ("Временная папка для .mp3 (перекрывает audio.cache_dir)",
+                      "Temporärer Ordner für .mp3 (überschreibt audio.cache_dir)"),
+    "arg_keep_audio": ("Не удалять .mp3 после выполнения (использовать как кеш)",
+                       ".mp3 nach dem Lauf nicht löschen (als Cache verwenden)"),
+    "arg_dry_run": ("Ничего не менять, только показать план",
+                    "Nichts ändern, nur den Plan zeigen"),
+    "arg_no_audio": ("Не озвучивать", "Nicht vertonen"),
+    "arg_audio_only": ("Только озвучка, без импорта", "Nur vertonen, kein Import"),
+    "arg_new_only": ("Озвучивать только заметки, добавленные в этом запуске",
+                     "Nur in diesem Lauf hinzugefügte Notizen vertonen"),
+    "arg_overwrite_audio": ("Перезаписывать уже заполненные аудио-поля",
+                            "Bereits gefüllte Audiofelder überschreiben"),
+    "arg_verbose": ("Подробный лог", "Ausführliches Log"),
     # --- main ---
     "dry_mode": ("[dry-run] Режим проверки: в Anki и в файлах ничего меняться не будет.",
                  "[dry-run] Prüfmodus: In Anki und in den Dateien wird nichts geändert."),
@@ -920,35 +956,53 @@ def cleanup_cache(cache_dir: Path) -> None:
 # --------------------------------------------------------------------------- #
 # main
 # --------------------------------------------------------------------------- #
+def detect_lang(argv=None) -> str:
+    """Язык справки и сообщений до полной загрузки конфига:
+    --lang > ui.language из config.yaml > DEFAULT_LANG. Ошибки чтения конфига игнорируются
+    (они будут показаны позже в load_config)."""
+    pre = argparse.ArgumentParser(add_help=False, allow_abbrev=False)
+    pre.add_argument("--config", default=str(DEFAULT_CONFIG))
+    pre.add_argument("--lang")
+    known, _ = pre.parse_known_args(argv)
+
+    if known.lang in SUPPORTED_LANGS:
+        return known.lang
+    try:
+        with open(Path(known.config).expanduser(), encoding="utf-8") as f:
+            raw = yaml.safe_load(f)
+        ui = raw.get("ui") if isinstance(raw, dict) else None
+        lang = str(ui.get("language", "")).strip().lower() if isinstance(ui, dict) else ""
+        if lang in SUPPORTED_LANGS:
+            return lang
+    except (OSError, yaml.YAMLError):
+        pass
+    return DEFAULT_LANG
+
+
 def parse_args(argv=None):
-    p = argparse.ArgumentParser(
-        description="Импорт из Excel в Anki + озвучка. Настройки: config.yaml / "
-                    "Excel-Import nach Anki + Vertonung. Einstellungen: config.yaml")
-    p.add_argument("--config", default=str(DEFAULT_CONFIG),
-                   help="Файл конфигурации (по умолчанию config.yaml рядом со скриптом)")
+    set_lang(detect_lang(argv))         # справка (-h) выводится на выбранном языке
+
+    p = argparse.ArgumentParser(description=t("arg_description"))
+    p.add_argument("--config", default=str(DEFAULT_CONFIG), help=t("arg_config"))
     # переопределения значений из конфига
-    p.add_argument("--lang", choices=list(SUPPORTED_LANGS),
-                   help="Язык сообщений / Sprache der Meldungen (перекрывает ui.language)")
-    p.add_argument("--file", help="Excel-файл (перекрывает excel.file)")
-    p.add_argument("--sheet", help="Имя листа (перекрывает excel.sheet)")
-    p.add_argument("--deck", help="Колода (перекрывает anki.deck)")
-    p.add_argument("--model", help="Тип заметки (перекрывает anki.model)")
-    p.add_argument("--url", help="URL AnkiConnect (перекрывает anki.url)")
-    p.add_argument("--engine", choices=["gtts", "edge"], help="Движок озвучки")
-    p.add_argument("--voice", help="Голос для edge-tts")
-    p.add_argument("--workers", type=int, help="Параллельных запросов к TTS")
-    p.add_argument("--cache-dir", help="Временная папка для .mp3")
-    p.add_argument("--keep-audio", action="store_true", default=None,
-                   help="Не удалять .mp3 после выполнения (использовать как кеш)")
+    p.add_argument("--lang", choices=list(SUPPORTED_LANGS), help=t("arg_lang"))
+    p.add_argument("--file", help=t("arg_file"))
+    p.add_argument("--sheet", help=t("arg_sheet"))
+    p.add_argument("--deck", help=t("arg_deck"))
+    p.add_argument("--model", help=t("arg_model"))
+    p.add_argument("--url", help=t("arg_url"))
+    p.add_argument("--engine", choices=["gtts", "edge"], help=t("arg_engine"))
+    p.add_argument("--voice", help=t("arg_voice"))
+    p.add_argument("--workers", type=int, help=t("arg_workers"))
+    p.add_argument("--cache-dir", help=t("arg_cache_dir"))
+    p.add_argument("--keep-audio", action="store_true", default=None, help=t("arg_keep_audio"))
     # режимы
-    p.add_argument("--dry-run", action="store_true", help="Ничего не менять, только показать план")
-    p.add_argument("--no-audio", action="store_true", help="Не озвучивать")
-    p.add_argument("--audio-only", action="store_true", help="Только озвучка, без импорта")
-    p.add_argument("--new-only", action="store_true",
-                   help="Озвучивать только заметки, добавленные в этом запуске")
-    p.add_argument("--overwrite-audio", action="store_true",
-                   help="Перезаписывать уже заполненные аудио-поля")
-    p.add_argument("-v", "--verbose", action="store_true", help="Подробный лог")
+    p.add_argument("--dry-run", action="store_true", help=t("arg_dry_run"))
+    p.add_argument("--no-audio", action="store_true", help=t("arg_no_audio"))
+    p.add_argument("--audio-only", action="store_true", help=t("arg_audio_only"))
+    p.add_argument("--new-only", action="store_true", help=t("arg_new_only"))
+    p.add_argument("--overwrite-audio", action="store_true", help=t("arg_overwrite_audio"))
+    p.add_argument("-v", "--verbose", action="store_true", help=t("arg_verbose"))
     return p.parse_args(argv)
 
 
