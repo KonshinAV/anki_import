@@ -1,6 +1,6 @@
 # anki_import
 
-🇷🇺 Русский · [🇩🇪 Deutsch](README.de.md)
+🇷🇺 Русский · [🇩🇪 Deutsch](README_de.md)
 
 Скрипт импортирует заметки из Excel в Anki (через [AnkiConnect](https://ankiweb.net/shared/info/2055492159)) и озвучивает нужные поля с помощью **gTTS** или **edge-tts**. Подходит для изучения иностранных слов с примерами предложений (по умолчанию настроен на немецкий → русский).
 
@@ -116,7 +116,7 @@ base_de | full_de | audio_text_de | base_tr | s1_de | s1_tr | ... | s9_de | s9_t
 
 | Секция | Параметры |
 |---|---|
-| `ui` | `language` — язык консоли: `ru` или `de` (по умолчанию `ru`) |
+| `ui` | `language` — язык консоли и справки `-h`: `ru` или `de` (по умолчанию `de`) |
 | `anki` | `url`, `deck` (`::` — вложенность), `model`, `timeout` |
 | `excel` | `file`, `sheet` |
 | `fields` | `key` — поле для поиска дубликатов; `base` — обычные поля (они же колонки Excel); `sentences` — список предложений |

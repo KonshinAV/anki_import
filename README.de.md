@@ -116,7 +116,7 @@ Relative Pfade beziehen sich auf den Ordner des Skripts.
 
 | Abschnitt | Parameter |
 |---|---|
-| `ui` | `language` — Sprache der Konsole: `ru` oder `de` (Standard `ru`) |
+| `ui` | `language` — Sprache der Konsole und der `-h`-Hilfe: `ru` oder `de` (Standard `de`) |
 | `anki` | `url`, `deck` (`::` = Verschachtelung), `model`, `timeout` |
 | `excel` | `file`, `sheet` |
 | `fields` | `key` — Feld zur Duplikaterkennung; `base` — normale Felder (zugleich Excel-Spalten); `sentences` — Liste der Sätze |
